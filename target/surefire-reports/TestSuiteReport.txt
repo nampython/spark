@@ -1,0 +1,13 @@
+[31m*** RUN ABORTED ***[0m
+[31m  java.lang.ClassNotFoundException: samples.AppTest[0m
+[31m  at java.base/java.net.URLClassLoader.findClass(URLClassLoader.java:476)[0m
+[31m  at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:589)[0m
+[31m  at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:522)[0m
+[31m  at java.base/java.lang.Class.forName0(Native Method)[0m
+[31m  at java.base/java.lang.Class.forName(Class.java:398)[0m
+[31m  at org.scalatest.junit.JUnitWrapperSuite.<init>(JUnitWrapperSuite.scala:53)[0m
+[31m  at org.scalatest.tools.Runner$.$anonfun$doRunRunRunDaDoRunRun$9(Runner.scala:1242)[0m
+[31m  at scala.collection.immutable.List.map(List.scala:293)[0m
+[31m  at org.scalatest.tools.Runner$.doRunRunRunDaDoRunRun(Runner.scala:1241)[0m
+[31m  at org.scalatest.tools.Runner$.$anonfun$runOptionallyWithPassFailReporter$24(Runner.scala:1031)[0m
+[31m  ...[0m
