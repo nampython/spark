@@ -10,6 +10,8 @@ import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import spark.App.sc
 
+import scala.collection.mutable.ListBuffer
+
 
 // {"id":1539262858055270400,"timestamp":"Tue Jun 21 15:03:58 +0000 2022","tweet64":"@US_FDA do your job! @RealCandaceO @GovRonDeSantis @BrianKempGA @NewsNation @ABC @FoxNews @CBS a vaccine that works still being ignored, no adverse side effects. @P_McCulloughMD @ComicDaveSmith","location":null}
 //{"id":1539262864833228800,"timestamp":"Tue Jun 21 15:03:59 +0000 2022","tweet64":"+ summer is coming. I have many memories of high school in the summer.I remember going to the pool with my friends with the free shuttle bus during the summer holidays, I used the same pool every summer with my friends before COVID-19 and before I became a trainee.  +","location":"she/her 04L"}
@@ -44,8 +46,9 @@ object SparkStreaming {
             PreferConsistent,
             Subscribe[String, String](topics, kafkaParams)
         )
-        val tweets = stream.map(record=>(record.value().toString)).cache()
-        tweets.print()
+        val tweets = stream.map(record=>(record.value())).cache()
+        val processedTweet = processTweet(tweets).cache()
+        processedTweet.print()
         //        val pairs = words.map(word => (word, 1))
         //        val wordCounts = pairs.reduceByKey(_ + _)
         //        wordCounts.print()
@@ -64,6 +67,22 @@ object SparkStreaming {
 
         ssc.start()             // Start the computation
         ssc.awaitTermination()  // Wait for the computation to terminate
+    }
+    def processTweet(tweets: DStream[String]): DStream[(String, String, String, String)] ={
+        val metricsStream = tweets.flatMap(eTweet => {
+            val relList = ListBuffer[String]()
+            val id = "Name";
+            val timestamp = "Nam";
+            val  tweet64 = "Nam";
+            val location = "Name";
+            relList += (id + " /TLOC/ " + timestamp + " /TLOC/ " + tweet64 + " /TLOC/ " + location);
+            relList.toList
+        })
+        val processedTweet = metricsStream.map(line => {
+            val Array(id, timestamp, tweet64, location) = line.split(" /TLOC/ ")
+            (id, timestamp, tweet64, location)
+        })
+        processedTweet;
     }
 
 
