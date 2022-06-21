@@ -87,7 +87,10 @@ object App {
         //val hashTagCountRDD = getHashTagCounts(tweets).cache()
         //val htInfoRDD = hashTagCountRDD.join(hashTagSentimentRDD)
         val hashTagSentimentRDD = processTweet(tweets).cache()
-
+//        hashTagSentimentRDD.print()
+//        (#,2.0,neutral,NULL)
+//        (#32thAnniversary,2.0,neutral,NULL)
+//        (#,2.0,neutral,NULL)
 
         // Create a data frame and write to database
         val schema = new StructType()
@@ -124,12 +127,18 @@ object App {
         sparkStreamContext.awaitTermination()
     }
 
+
+
+    // Viet Nam /TLOC/ SENTIMENT140_TEST_DATA_ABSOLUTE_PATH
+    // Viet Nam /TLOC/ SENTIMENT140_TEST_DATA_ABSOLUTE_PATH
+    // Viet Nam /TLOC/ SENTIMENT140_TEST_DATA_ABSOLUTE_PATH
     def processTweet(tweets: DStream[String]): DStream[(String, Double, String, String)] = {
         println("Calling processTweet ...")
         val metricsStream = tweets.flatMap { eTweet => {
             println(eTweet)
             val retList = ListBuffer[String]()
             // Process each tweet
+//            null /TLOC/ RT @Strodinn: Participa por #FreeAccess dando
             for (tag <- eTweet.split(" ")) {
                 if (tag.startsWith("#") && tag.replaceAll("\\s", "").length > 1) {
                     val tweetObj = eTweet.split(" /TLOC/ ")
@@ -145,8 +154,7 @@ object App {
                     try {
                         // Function call to detect the tweet sentiment
                         val (sentimentScore, sentimentType) = DetectSentiment._detectSentiment(tweet_clean)
-                        retList += (tag + " /TLOC/ " + sentimentScore + " /TLOC/ " +
-                            sentimentType.toString.toLowerCase + " /TLOC/ " + country)
+                        retList += (tag + " /TLOC/ " + sentimentScore + " /TLOC/ " + sentimentType.toString.toLowerCase + " /TLOC/ " + country)
 
                     } catch {
                         case e: IOException => e.printStackTrace(); (tag, "-1.0")
@@ -157,8 +165,7 @@ object App {
         }}
         val processedTweet = metricsStream.map(line => {
             val Array(tag, sentiScore, sentiType, location) = line.split(" /TLOC/ ")
-            (tag.replaceAll("(\\w*RT)|[^a-zA-Z0-9#]", ""),
-                sentiScore.toDouble, sentiType, location)
+            (tag.replaceAll("(\\w*RT)|[^a-zA-Z0-9#]", ""),sentiScore.toDouble, sentiType, location)
         })
         /*
         // averaging the sentiment for each hash tag (not being used at the moment)
