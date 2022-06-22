@@ -29,7 +29,7 @@ object MLlibSentimentAnalyzer {
      * @param sentiment polarity of the tweet
      * @return normalized to either -1, 0 or 1 based on tweet being negative, neutral and positive.
      */
-    def normalizeMLlibSentiment(sentiment: Double) = {
+    def normalizeMLlibSentiment(sentiment: Double): Int = {
         sentiment match {
             case x if x == 0 => -1 // negative
             case x if x == 2 => 0 // neutral

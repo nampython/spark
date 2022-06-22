@@ -1,9 +1,16 @@
 package spark
 
+import Mlib.{MLlibSentimentAnalyzer, PropertiesLoader, StopwordsLoader}
+import net.liftweb.json._
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.mllib.classification.NaiveBayesModel
+import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.streaming.dstream.{DStream, ReceiverInputDStream}
+import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import org.apache.spark.streaming.dstream.{DStream, InputDStream, ReceiverInputDStream}
 import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
 import org.apache.spark.streaming.kafka010.KafkaUtils
 import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
@@ -20,6 +27,11 @@ import scala.collection.mutable.ListBuffer
 
 object SparkStreaming {
 
+    case class Tweet(id: String, timeStamp: Option[String], tweet64: String, location: String) {
+        def this(id: String, tweet64: String, location: String) = this(id, None, tweet64, location)
+    }
+
+
     val kafkaParams: Map[String, Object] = Map[String, Object](
         "bootstrap.servers" -> "localhost:9092,anotherhost:9092",
         "key.deserializer" -> classOf[StringDeserializer],
@@ -29,63 +41,86 @@ object SparkStreaming {
         "enable.auto.commit" -> (false: java.lang.Boolean)
     )
     val topics: Array[String] = Array("tweets")
+    val sparkConfig: SparkConf = new SparkConf()
+        .setAppName("My App")
+        .setMaster("local[*]")
+        .registerKryoClasses(Array(classOf[DefaultFormats]))
+    implicit val formats: DefaultFormats.type = DefaultFormats
+    val spark: SparkSession = SparkSession
+        .builder()
+        .config(sparkConfig)
+        .getOrCreate()
+    val sc: SparkContext = spark.sparkContext;
+    sc.setLogLevel("WARN")
+    val ssc = new StreamingContext(sc, Seconds(5));
+    val stopWordsList: Broadcast[List[String]] = ssc.sparkContext.broadcast(StopwordsLoader.loadStopWords(PropertiesLoader.nltkStopWords))
+    //         Load Naive Bayes Model from the location specified in the config file.
+    val naiveBayesModel: NaiveBayesModel = NaiveBayesModel.load(ssc.sparkContext, PropertiesLoader.naiveBayesModelPath)
 
-    def main(args : Array[String]): Unit = {
-        val spark: SparkSession = SparkSession
-            .builder()
-            .master("local[*]")
-            .appName("My App")
-            .getOrCreate()
-        val sc: SparkContext = spark.sparkContext;
-        sc.setLogLevel("WARN")
+    val stream: InputDStream[ConsumerRecord[String, String]] = KafkaUtils.createDirectStream[String, String](
+        ssc,
+        PreferConsistent,
+        Subscribe[String, String](topics, kafkaParams)
+    )
 
-        val ssc = new StreamingContext(sc, Seconds(5));
-
-        val stream  = KafkaUtils.createDirectStream[String, String](
-            ssc,
-            PreferConsistent,
-            Subscribe[String, String](topics, kafkaParams)
-        )
-        val tweets = stream.map(record=>(record.value())).cache()
-        val processedTweet = processTweet(tweets).cache()
-        processedTweet.print()
-        //        val pairs = words.map(word => (word, 1))
-        //        val wordCounts = pairs.reduceByKey(_ + _)
-        //        wordCounts.print()
-        //                stream.map(record => (record.key, record.value))
-        //        val lines: ReceiverInputDStream[String] = ssc.socketTextStream("localhost", 9999)
-        //        lines.print()
-        //        val words: DStream[String] = lines.flatMap(_.split(" "))
-        //
-        //        // Count each word in each batch
-        //        val pairs: DStream[(String, Int)] = words.map(word => (word, 1))
-        //        val wordCounts: DStream[(String, Int)] = pairs.reduceByKey(_ + _)
-        //
-        //        // Print the first ten elements of each RDD generated in this DStream to the console
-        //        wordCounts.print()
-
-
-        ssc.start()             // Start the computation
-        ssc.awaitTermination()  // Wait for the computation to terminate
+    def predictSentiments(textTweet: String): Int = {
+        val mllibSentiment = MLlibSentimentAnalyzer.computeSentiment(textTweet, stopWordsList, naiveBayesModel)
+        mllibSentiment
     }
-    def processTweet(tweets: DStream[String]): DStream[(String, String, String, String)] ={
+    def processTweet(tweets: DStream[String]): DStream[(String, String, String, String, String)] ={
         val metricsStream = tweets.flatMap(eTweet => {
+            implicit val formats: DefaultFormats.type = DefaultFormats
             val relList = ListBuffer[String]()
-            val id = "Name";
-            val timestamp = "Nam";
-            val  tweet64 = "Nam";
-            val location = "Name";
-            relList += (id + " /TLOC/ " + timestamp + " /TLOC/ " + tweet64 + " /TLOC/ " + location);
+            // convert a String to a JValue object
+            val jValue = parse(eTweet)
+            // create a tweet object from the string
+            val tweet = jValue.extract[Tweet]
+            val id = tweet.id;
+            val timestamp = tweet.timeStamp;
+            val tweet64 = tweet.tweet64.replaceAll("(\\b\\w*RT)|[^a-zA-Z0-9\\s.,!@]", "")
+                .replaceAll("(http\\S+)", "")
+                .replaceAll("(@\\w+)", "Foo")
+                .replaceAll("^(Foo)", "");
+            val score = predictSentiments(tweet64);
+            val location = tweet.location;
+            relList += (id + " /TLOC/ " + timestamp + " /TLOC/ " + tweet64 + " /TLOC/ " + location + " /TLOC/ " + score);
             relList.toList
         })
         val processedTweet = metricsStream.map(line => {
-            val Array(id, timestamp, tweet64, location) = line.split(" /TLOC/ ")
-            (id, timestamp, tweet64, location)
+            val Array(id, timestamp, tweet64, location, score) = line.split(" /TLOC/ ")
+            (id, timestamp, tweet64, location, score)
         })
         processedTweet;
     }
+    def main(args : Array[String]): Unit = {
 
 
+        val tweets: DStream[String] = stream.map(record => (record.value())).cache()
+        val processedTweet = processTweet(tweets).cache()
+        val schema = new StructType()
+            .add(StructField("id", StringType, nullable = true))
+            .add(StructField("timeStamp", StringType, nullable = true))
+            .add(StructField("tweet64", StringType, nullable = true))
+            .add(StructField("location", StringType, nullable = true))
+            .add(StructField("score", StringType, nullable = true))
+        val counter = sc.longAccumulator("counter")
+        processedTweet.foreachRDD(
+            (rdd: RDD[(String, String, String, String, String)]) => {
+                try {
+                    val newRDD = rdd.map(r =>
+                        Row(r._1, r._2, r._3, r._4, r._5)
+                    )
+                    val dfTweet = spark.createDataFrame(newRDD, schema).cache()
+                    dfTweet.show();
+                }
+
+
+            }
+        )
+        ssc.start() // Start the computation
+        ssc.awaitTermination() // Wait for the computation to terminate
+
+    }
 }
 //{"id":1539249582940594200,"timestamp":"Tue Jun 21 14:11:13 +0000 2022","tweet64":"OCUGEN ANNOUNCES PUBLICATION OF POSITIVE RESULTS OF COVID-19 VACCINE TRIAL FOR CHILDREN 2-18 IN THE LANCET INFECTIOUS DISEASES\n\n$OCGN\n\nhttps://t.co/lRxt4hyTfY","location":"Boca Raton, FL"}
 //{"id":1539249585570336800,"timestamp":"Tue Jun 21 14:11:13 +0000 2022","tweet64":"FDA \"approves\" COVID Vaccine for 6-month-old Babies despite Deaths among Children increasing by 53% in 2021 following Covid-19 Vaccination https://t.co/9byowyKsJT","location":null}

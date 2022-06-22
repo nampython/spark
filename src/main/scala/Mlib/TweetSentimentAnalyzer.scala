@@ -20,55 +20,71 @@ object TweetSentimentAnalyzer {
 
         val ssc = StreamingContext.getActiveOrCreate(createSparkStreamingContext)
         val simpleDateFormat = new SimpleDateFormat("EE MMM dd HH:mm:ss ZZ yyyy")
-//        LogUtils.setLogLevels(ssc.sparkContext)
-        // Load Naive Bayes Model from the location specified in the config file.
-//        val naiveBayesModel = NaiveBayesModel.load(ssc.sparkContext, PropertiesLoader.naiveBayesModelPath)
-//        val stopWordsList = ssc.sparkContext.broadcast(StopwordsLoader.loadStopWords(PropertiesLoader.nltkStopWords))
+        LogUtils.setLogLevels(ssc.sparkContext)
+//         Load Naive Bayes Model from the location specified in the config file.
+        val naiveBayesModel = NaiveBayesModel.load(ssc.sparkContext, PropertiesLoader.naiveBayesModelPath)
+        val stopWordsList = ssc.sparkContext.broadcast(StopwordsLoader.loadStopWords(PropertiesLoader.nltkStopWords))
 
 
 
-//        def predictSentiment(status: Status): (Long, String, String, Int, Double, Double, String, String) = {
-//            val tweetText = replaceNewLines(status.getText)
-//            val mllibSentiment = {
-//                // If tweet is in English, compute the sentiment by MLlib and also with Stanford CoreNLP.
-//                if (isTweetInEnglish(status)) {
-//                    (MLlibSentimentAnalyzer.computeSentiment(tweetText, stopWordsList, naiveBayesModel))
-//                } else {
-//                    // TODO: all non-English tweets are defaulted to neutral.
-//                    // TODO: this is a workaround :: as we cant compute the sentiment of non-English tweets with our current model.
-//                    0;
-//                }
-//            }
-//            (status.getId,
-//                status.getUser.getScreenName,
-//                tweetText,
-//                mllibSentiment,
-//                status.getGeoLocation.getLatitude,
-//                status.getGeoLocation.getLongitude,
-//                status.getUser.getOriginalProfileImageURL,
-//                simpleDateFormat.format(status.getCreatedAt))
-//        }
+        def predictSentiment(status: Status): (Long, String, String, Int, Double, Double, String, String) = {
+            val tweetText = replaceNewLines(status.getText)
+            val mllibSentiment = {
+                // If tweet is in English, compute the sentiment by MLlib and also with Stanford CoreNLP.
+                if (isTweetInEnglish(status)) {
+                    (MLlibSentimentAnalyzer.computeSentiment(tweetText, stopWordsList, naiveBayesModel))
+                } else {
+                    // TODO: all non-English tweets are defaulted to neutral.
+                    // TODO: this is a workaround :: as we cant compute the sentiment of non-English tweets with our current model.
+                    0;
+                }
+            }
+            (status.getId,
+                status.getUser.getScreenName,
+                tweetText,
+                mllibSentiment,
+                status.getGeoLocation.getLatitude,
+                status.getGeoLocation.getLongitude,
+                status.getUser.getOriginalProfileImageURL,
+                simpleDateFormat.format(status.getCreatedAt))
+        }
 
         val oAuth: Some[OAuthAuthorization] = OAuthUtils.bootstrapTwitterOAuth()
         val rawTweets = TwitterUtils.createStream(ssc, oAuth)
-//        rawTweets.print()
+        rawTweets.print()
         // Save Raw tweets only if the flag is set to true.
-//        if (PropertiesLoader.saveRawTweets) {
+        if (PropertiesLoader.saveRawTweets) {
             rawTweets.cache()
-
             rawTweets.foreachRDD { rdd =>
                 if (rdd != null && !rdd.isEmpty() && !rdd.partitions.isEmpty) {
-                    println(rdd)
+                   println(rdd)
                 }
             }
-//        }
+        }
+        // This delimiter was chosen as the probability of this character appearing in tweets is very less.
+        val DELIMITER = "¦"
+        val tweetsClassifiedPath = PropertiesLoader.tweetsClassifiedPath
+        val classifiedTweets = rawTweets.filter(hasGeoLocation)
+            .map(predictSentiment)
+
+
+
         ssc.start()
         ssc.awaitTerminationOrTimeout(PropertiesLoader.totalRunTimeInMinutes * 60 * 1000) // auto-kill after processing rawTweets for n mins.
 
     }
 
-
     /**
+     * Checks if the tweet Status has Geo-Coordinates.
+     *
+     * @param status twitter4j Status object
+     * @return Boolean status of presence of Geolocation of the tweet.
+     */
+    def hasGeoLocation(status: Status): Boolean = {
+        null != status.getGeoLocation
+    }
+    /**
+     *
      * Jackson Object Mapper for mapping twitter4j.Status object to a String for saving raw tweet.
      */
     val jacksonObjectMapper: ObjectMapper = new ObjectMapper()
@@ -79,7 +95,6 @@ object TweetSentimentAnalyzer {
      * @param tweetsRawPath -- Path of the folder where raw tweets are saved.
      */
 //    def saveRawTweetsInJSONFormat(rdd: RDD[Status], tweetsRawPath: String): Unit = {
-//        val spark = SparkNaiveBayesModelCreator.createSparkSession();
 //        val sqlContext = SQLContextSingleton.getInstance(rdd.sparkContext)
 //        val tweet = rdd.map(status => jacksonObjectMapper.writeValueAsString(status))
 //        val rawTweetsDF = sqlContext.read.json(tweet)
