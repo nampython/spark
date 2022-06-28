@@ -15,7 +15,7 @@ import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
 import org.apache.spark.streaming.kafka010.KafkaUtils
 import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
 import org.apache.spark.streaming.{Seconds, StreamingContext}
-import spark.App.sc
+import spark.App.{sc, uri2}
 
 import scala.collection.mutable.ListBuffer
 
@@ -30,7 +30,8 @@ object SparkStreaming {
     case class Tweet(id: String, timeStamp: Option[String], tweet64: String, location: String) {
         def this(id: String, tweet64: String, location: String) = this(id, None, tweet64, location)
     }
-
+    val uri1 = "mongodb://127.0.0.1/test.myCollection"
+    val uri2 = "mongodb+srv://nam130599:nam130599@cluster0.ebeqc.mongodb.net/M001.test_tweet"
 
     val kafkaParams: Map[String, Object] = Map[String, Object](
         "bootstrap.servers" -> "localhost:9092,anotherhost:9092",
@@ -49,6 +50,8 @@ object SparkStreaming {
     val spark: SparkSession = SparkSession
         .builder()
         .config(sparkConfig)
+        .config("spark.mongodb.input.uri", uri2)
+        .config("spark.mongodb.output.uri", uri2)
         .getOrCreate()
     val sc: SparkContext = spark.sparkContext;
     sc.setLogLevel("WARN")
@@ -112,9 +115,11 @@ object SparkStreaming {
                     )
                     val dfTweet = spark.createDataFrame(newRDD, schema).cache()
                     dfTweet.show();
+                    dfTweet.repartition(10).write.format("mongo")
+                        .mode("append").save()
+                } catch {
+                    case e: Exception => e.printStackTrace()
                 }
-
-
             }
         )
         ssc.start() // Start the computation
