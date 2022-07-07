@@ -9,7 +9,7 @@ import org.apache.spark.mllib.classification.NaiveBayesModel
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{Row, SparkSession}
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import org.apache.spark.sql.types.{DoubleType, IntegerType, LongType, StringType, StructField, StructType}
 import org.apache.spark.streaming.dstream.{DStream, InputDStream, ReceiverInputDStream}
 import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
 import org.apache.spark.streaming.kafka010.KafkaUtils
@@ -26,12 +26,11 @@ import scala.collection.mutable.ListBuffer
 
 
 object SparkStreaming {
-
-    case class Tweet(id: String, timeStamp: Option[String], tweet64: String, location: String) {
-        def this(id: String, tweet64: String, location: String) = this(id, None, tweet64, location)
+    case class Tweet(id: Long, timestamp: Option[String], tweet64: String, screen_name: String, url_img: String, latitude: Double, longitude: Double, lang: String) {
+        def this(id: Long, tweet64: String, screen_name: String, url_img: String, latitude: Double, longitude: Double, lang: String) = this(id, None, tweet64, screen_name, url_img, latitude, longitude, lang)
     }
     val uri1 = "mongodb://127.0.0.1/test.myCollection"
-    val uri2 = "mongodb+srv://nam130599:nam130599@cluster0.ebeqc.mongodb.net/M001.test_tweet"
+    val uri2 = "mongodb+srv://nam130599:nam130599@cluster0.ebeqc.mongodb.net/M001.tweets"
 
     val kafkaParams: Map[String, Object] = Map[String, Object](
         "bootstrap.servers" -> "localhost:9092,anotherhost:9092",
@@ -66,11 +65,16 @@ object SparkStreaming {
         Subscribe[String, String](topics, kafkaParams)
     )
 
-    def predictSentiments(textTweet: String): Int = {
-        val mllibSentiment = MLlibSentimentAnalyzer.computeSentiment(textTweet, stopWordsList, naiveBayesModel)
-        mllibSentiment
+    def predictSentiments(textTweet: String, lang: String): Int = {
+        if (isTweetInEnglish(lang)) {
+            val mllibSentiment = MLlibSentimentAnalyzer.computeSentiment(textTweet, stopWordsList, naiveBayesModel)
+            mllibSentiment
+        }
+        else {
+            0;
+        }
     }
-    def processTweet(tweets: DStream[String]): DStream[(String, String, String, String, String)] ={
+    def processTweet(tweets: DStream[String]): DStream[(Long, String, String, String, String, Double, Double, Int, String)] ={
         val metricsStream = tweets.flatMap(eTweet => {
             implicit val formats: DefaultFormats.type = DefaultFormats
             val relList = ListBuffer[String]()
@@ -78,40 +82,71 @@ object SparkStreaming {
             val jValue = parse(eTweet)
             // create a tweet object from the string
             val tweet = jValue.extract[Tweet]
-            val id = tweet.id;
-            val timestamp = tweet.timeStamp;
-            val tweet64 = tweet.tweet64.replaceAll("(\\b\\w*RT)|[^a-zA-Z0-9\\s.,!@]", "")
+
+            val id = tweet.id.toLong;
+            val timestamp = tweet.timestamp;
+            val tweet64 = tweet.tweet64
+                .replaceAll("(\\b\\w*RT)|[^a-zA-Z0-9\\s.,!@]", "")
                 .replaceAll("(http\\S+)", "")
                 .replaceAll("(@\\w+)", "Foo")
                 .replaceAll("^(Foo)", "");
-            val score = predictSentiments(tweet64);
-            val location = tweet.location;
-            relList += (id + " /TLOC/ " + timestamp + " /TLOC/ " + tweet64 + " /TLOC/ " + location + " /TLOC/ " + score);
+            val screen_name = tweet.screen_name;
+            val url_img = tweet.url_img;
+            val latitude = tweet.latitude.toDouble;
+            val longitude = tweet.longitude.toDouble;
+            val lang = tweet.lang
+            val score = predictSentiments(tweet64, lang);
+
+            relList += (id + " /TLOC/ " + timestamp + " /TLOC/ " + tweet64 + " /TLOC/ " + screen_name + " /TLOC/ " + url_img + " /TLOC/ " + latitude + " /TLOC/ " + longitude + " /TLOC/ " +  score + " /TLOC/ " + lang);
             relList.toList
         })
         val processedTweet = metricsStream.map(line => {
-            val Array(id, timestamp, tweet64, location, score) = line.split(" /TLOC/ ")
-            (id, timestamp, tweet64, location, score)
+            val Array(id, timestamp, tweet64, screen_name, url_img, latitude, longitude, score, lang) = line.split(" /TLOC/ ")
+            (id.toLong, timestamp, tweet64, screen_name, url_img, latitude.toDouble, longitude.toDouble, score.toInt, lang)
         })
         processedTweet;
+//    Long, String, String, String, String, Double, Double, Int, String
+    }
+    /**
+     * Checks if the tweet Status is in English language.
+     * Actually uses profile's language as well as the Twitter ML predicted language to be sure that this tweet is
+     * indeed English.
+     *
+     * @param status twitter4j Status object
+     * @return Boolean status of tweet in English or not.
+     */
+    def isTweetInEnglish(lang: String): Boolean = {
+        lang == "en";
     }
     def main(args : Array[String]): Unit = {
 
-
+        //    case class Tweet(id: Long, timeStamp: Option[String], tweet64: String, screen_name: String, url_img: String, latitude: Double, longitude: Double)    //        (Long, String, String, String, String, Long, Long, Int)
+        //    //        {"id":1544886111981342700,
+        //    //            "timestamp":"1657164526349",
+        //    //            "tweet64":"Papalii comes in as All Blacks shuffle pack for second Ireland Test | Latest Rugby News | https://t.co/atiLzAazci - https://t.co/2Fu9dWlmiX https://t.co/TTxvEuJq19 SignUp HiPeople https://t.co/WAFlj4p8XC",
+        //    //            "screen_name":"JustNowOne",
+        //    //            "url_img":"http://pbs.twimg.com/profile_images/1508449203613224960/xhJpUFm0_normal.jpg",
+        //    //            "latitude":24.07938752,
+        //    //            "longitude":56.9318035}
         val tweets: DStream[String] = stream.map(record => (record.value())).cache()
-        val processedTweet = processTweet(tweets).cache()
+        val processedTweet: DStream[(Long, String, String, String, String, Double, Double, Int, String)] = processTweet(tweets).cache()
         val schema = new StructType()
-            .add(StructField("id", StringType, nullable = true))
+            .add(StructField("id", LongType, nullable = true))
             .add(StructField("timeStamp", StringType, nullable = true))
             .add(StructField("tweet64", StringType, nullable = true))
-            .add(StructField("location", StringType, nullable = true))
-            .add(StructField("score", StringType, nullable = true))
+            .add(StructField("screen_name", StringType, nullable = true))
+            .add(StructField("url_img", StringType, nullable = true))
+            .add(StructField("latitude", DoubleType, nullable = true))
+            .add(StructField("longitude", DoubleType, nullable = true))
+            .add(StructField("score", IntegerType, nullable = true))
+            .add(StructField("lang", StringType, nullable = true))
+
         val counter = sc.longAccumulator("counter")
         processedTweet.foreachRDD(
-            (rdd: RDD[(String, String, String, String, String)]) => {
+            (rdd: RDD[(Long, String, String, String, String, Double, Double, Int, String)]) => {
                 try {
                     val newRDD = rdd.map(r =>
-                        Row(r._1, r._2, r._3, r._4, r._5)
+                        Row(r._1, r._2, r._3, r._4, r._5, r._6, r._7, r._8, r._9)
                     )
                     val dfTweet = spark.createDataFrame(newRDD, schema).cache()
                     dfTweet.show();
