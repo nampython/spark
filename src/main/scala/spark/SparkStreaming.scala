@@ -74,7 +74,8 @@ object SparkStreaming {
             0;
         }
     }
-    def processTweet(tweets: DStream[String]): DStream[(Long, String, String, String, String, Double, Double, Int, String)] ={
+
+    def processTweet(tweets: DStream[String]): DStream[(Long, String, String, String, String, Double, Double, Int, String, String)] ={
         val metricsStream = tweets.flatMap(eTweet => {
             implicit val formats: DefaultFormats.type = DefaultFormats
             val relList = ListBuffer[String]()
@@ -96,13 +97,19 @@ object SparkStreaming {
             val longitude = tweet.longitude.toDouble;
             val lang = tweet.lang
             val score = predictSentiments(tweet64, lang);
-
-            relList += (id + " /TLOC/ " + timestamp + " /TLOC/ " + tweet64 + " /TLOC/ " + screen_name + " /TLOC/ " + url_img + " /TLOC/ " + latitude + " /TLOC/ " + longitude + " /TLOC/ " +  score + " /TLOC/ " + lang);
+            var sentimentType = "Neutral";
+            if (score == 1) {
+                sentimentType = "Positive";
+            }
+            if (score == -1) {
+                sentimentType = "Negative";
+            }
+            relList += (id + " /TLOC/ " + timestamp + " /TLOC/ " + tweet64 + " /TLOC/ " + screen_name + " /TLOC/ " + url_img + " /TLOC/ " + latitude + " /TLOC/ " + longitude + " /TLOC/ " +  score + " /TLOC/ " + lang + " /TLOC/ " + sentimentType);
             relList.toList
         })
         val processedTweet = metricsStream.map(line => {
-            val Array(id, timestamp, tweet64, screen_name, url_img, latitude, longitude, score, lang) = line.split(" /TLOC/ ")
-            (id.toLong, timestamp, tweet64, screen_name, url_img, latitude.toDouble, longitude.toDouble, score.toInt, lang)
+            val Array(id, timestamp, tweet64, screen_name, url_img, latitude, longitude, score, lang, sentimentType) = line.split(" /TLOC/ ")
+            (id.toLong, timestamp, tweet64, screen_name, url_img, latitude.toDouble, longitude.toDouble, score.toInt, lang, sentimentType)
         })
         processedTweet;
 //    Long, String, String, String, String, Double, Double, Int, String
@@ -129,7 +136,7 @@ object SparkStreaming {
         //    //            "latitude":24.07938752,
         //    //            "longitude":56.9318035}
         val tweets: DStream[String] = stream.map(record => (record.value())).cache()
-        val processedTweet: DStream[(Long, String, String, String, String, Double, Double, Int, String)] = processTweet(tweets).cache()
+        val processedTweet: DStream[(Long, String, String, String, String, Double, Double, Int, String, String)] = processTweet(tweets).cache()
         val schema = new StructType()
             .add(StructField("id", LongType, nullable = true))
             .add(StructField("timeStamp", StringType, nullable = true))
@@ -140,13 +147,14 @@ object SparkStreaming {
             .add(StructField("longitude", DoubleType, nullable = true))
             .add(StructField("score", IntegerType, nullable = true))
             .add(StructField("lang", StringType, nullable = true))
+            .add(StructField("sentimentType", StringType, nullable = true))
 
         val counter = sc.longAccumulator("counter")
         processedTweet.foreachRDD(
-            (rdd: RDD[(Long, String, String, String, String, Double, Double, Int, String)]) => {
+            (rdd: RDD[(Long, String, String, String, String, Double, Double, Int, String, String)]) => {
                 try {
                     val newRDD = rdd.map(r =>
-                        Row(r._1, r._2, r._3, r._4, r._5, r._6, r._7, r._8, r._9)
+                        Row(r._1, r._2, r._3, r._4, r._5, r._6, r._7, r._8, r._9, r._10)
                     )
                     val dfTweet = spark.createDataFrame(newRDD, schema).cache()
                     dfTweet.show();

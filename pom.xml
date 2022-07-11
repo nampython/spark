@@ -25,6 +25,14 @@
   </properties>
 
   <dependencies>
+      <!-- https://mvnrepository.com/artifact/net.liftweb/lift-json -->
+      <dependency>
+          <groupId>net.liftweb</groupId>
+          <artifactId>lift-json_2.12</artifactId>
+          <version>3.3.0</version>
+      </dependency>
+
+
 
       <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-streaming-twitter -->
       <dependency>
