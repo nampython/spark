@@ -4,7 +4,7 @@
     <profile name="Maven 1" modules="spark">
       <parameters>
         <parameter value="-dependencyfile" />
-        <parameter value="$PROJECT_DIR$/target/.scala_dependencies" />
+        <parameter value="C:\Users\nam.dinh\Desktop\study\spark\target/.scala_dependencies" />
       </parameters>
     </profile>
   </component>
