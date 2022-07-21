@@ -20,22 +20,24 @@ object Tweets {
                         x => (x._1, x._2, predictSentiments(x._2, "en"))
                     )
             .toDF("key", "value", "predict")
+
         val final_data = df.writeStream
             .outputMode("append")
             .format("console")
             .start()
 
-        val uri = "mongodb+srv://nam130599:nam130599@cluster0.ebeqc.mongodb.net/M001.tweet2"
-        val uri2 = "mongodb+srv://nam130599:nam130599@cluster0.ebeqc.mongodb.net/M001.tweets"
+        // Write key-value data from a DataFrame to a specific Kafka topic specified in an option
+        val datatoKafka = df.toJSON
+        .writeStream
+        .format("kafka")
+        .option("kafka.bootstrap.servers", "localhost:9092")
+        .option("topic", "tweet3")
+            .option("checkpointLocation", "C:/kafka_2.12-2.8.0/kafka_2.12-2.8.0datakafka/tweet3-0")
+        .start()
 
-        val saveToMongDB = df.writeStream
-            .format("mongo")
-            .option("spark.mongodb.connection.uri", uri2)
-            .outputMode("append")
-            .start()
-
-        saveToMongDB.awaitTermination()
+        datatoKafka.awaitTermination()
         final_data.awaitTermination()
+
 
 
 
